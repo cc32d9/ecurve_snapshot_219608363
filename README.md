@@ -236,7 +236,81 @@ nohup /usr/bin/perl /opt/eosio_tables_db/eosio_tables_dbwriter.pl --network=eos 
 /usr/local/sbin/chronicle-receiver --config-dir=/srv/eosio_tables_eos/chronicle-config \
 --data-dir=/srv/eosio_tables_eos/chronicle-data --start-block=219519258
 
+mkdir /root/report
+cd /root/report
 
-# save the data for analysis
-mysqldump --databases eosio_tables >/root/ecurve_snapshot_219608363.sqldump
-gzip /root/ecurve_snapshot_219608363.sqldump
+# save the data for archiving, a copy is in report_data folder
+mysqldump --databases eosio_tables >ecurve_snapshot_219608363.sqldump
+gzip ecurve_snapshot_219608363.sqldump
+
+# balance reports, in tab-separated value files
+
+
+## ecurvelp1111 ##
+
+# all balances in ecurvelp1111, like "alxbransby12    0.000000976 EOSDTPL"
+mysql eosio_tables --batch --execute="select scope as account, SUBSTRING_INDEX(fval, ' ', 1) as balance, SUBSTRING_INDEX(fval, ' ', -1) as currency from eos_ROWS where contract='ecurvelp1111' and tbl='accounts' order by scope" >ecurvelp1111_accounts.tsv
+
+
+## depositlp11* ##
+
+# deposits, like "romans1x2abc    depositlp113    30.315458006 EOSDTPL"
+mysql eosio_tables --batch --execute="select account, contract, SUBSTRING_INDEX(fval, ' ', 1) as balance, SUBSTRING_INDEX(fval, ' ', -1) as currency from eos_ROWS, (select pk, contract as ctr, fval as account from eos_ROWS where contract like 'depositlp11%' and tbl='stake' and field='account') X where X.pk=eos_ROWS.pk  and ctr=contract and tbl='stake' and field='balance' order by account,contract" >deposits.tsv
+
+
+## dadusdtokens ##
+
+# all balances in dadusdtokens, like "antidankguns    6.041695 USDC"
+mysql eosio_tables --batch --execute="select scope as account, SUBSTRING_INDEX(fval, ' ', 1) as balance, SUBSTRING_INDEX(fval, ' ', -1) as currency from eos_ROWS where contract='dadusdtokens' and tbl='accounts' order by scope" >dadusdtokens_accounts.tsv
+
+
+## tethertether ##
+
+# all USDT balances, numbers only 
+mysql eosio_tables --batch --execute="select scope as account, SUBSTRING_INDEX(fval, ' ', 1) as balance, SUBSTRING_INDEX(fval, ' ', -1) as currency from eos_ROWS where contract='tethertether' and tbl='accounts' order by scope" >tethertether_balances.tsv
+
+
+## swap.defi ##
+
+# swap.defi pairs
+mysql eosio_tables --batch --execute="select pk,field,fval from eos_ROWS where contract='swap.defi' and tbl='pairs' and pk IN (1255, 1239, 1341, 1342) order by pk, field" > swap.defi_pairs.tsv
+
+
+## lptoken.defi - TODO ##
+
+cat >symbol_name.sql <<'EOT'
+CREATE TABLE SYMBOL_NAME_CONV
+( sym VARCHAR(7) PRIMARY KEY,
+  name VARCHAR(13) NOT NULL ) ENGINE=InnoDB;
+INSERT INTO SYMBOL_NAME_CONV (sym, name) VALUES
+('BOXAVG', '...4ipm1f1bo2'),
+('BOXAUQ', '...52pe1f1bo2'),
+('BOXAYO', '...4yqe1f1bo2'),
+('BOXAYP', '...5.qe1f1bo2');
+EOT
+
+mysql eosio_tables <symbol_name.sql
+
+mysql eosio_tables --batch --execute="select SYMBOL_NAME_CONV.sym as currency, account, fval as balance from eos_ROWS, (select pk, contract as ctr, scope as scp, fval as account from eos_ROWS where contract='lptoken.defi' and tbl='userinfo' and field='owner') X, SYMBOL_NAME_CONV where X.pk=eos_ROWS.pk and ctr=contract and scope=scp and tbl='userinfo' and field='liquidity' and scope=SYMBOL_NAME_CONV.name order by currency,account" >lptoken.defi_liquidity.tsv
+
+
+## dpositboxa** ##
+
+# balances of BOXAUQ, BOXAVG, ...
+for c in dpositboxauq dpositboxavg dpositboxayo dpositboxayp; do
+mysql eosio_tables --batch --execute="select account, SUBSTRING_INDEX(fval, ' ', 1) as balance, SUBSTRING_INDEX(fval, ' ', -1) as currency from eos_ROWS, (select contract as ctr, pk, fval as account from eos_ROWS where contract='"${c}"' and scope='"${c}"' and tbl='stake' and field='account') X where X.ctr=contract and X.pk=eos_ROWS.pk  and scope='"${c}"' and tbl='stake' and field='balance' order by account" >${c}_balances.tsv;
+done
+
+```
+
+All `*.tsv` files are available in `report_data/tsv_data.zip` in this repository.
+
+They are also imported into `ecurve_snapshot_219608363.ods` using LibreOffice Calc.
+
+----
+2022-01-25 cc32d9@gmail.com
+
+
+
+
+
